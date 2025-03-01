@@ -1,0 +1,15 @@
+name: quick-share
+
+services:
+  server:
+    container_name: quick-share
+    build:
+      context: .
+      dockerfile: Dockerfile
+    mem_limit: 1G
+    restart: on-failure:3
+    ports:
+      - 127.0.0.1:20000:3030
+    env_file:
+      - path: ".env"
+        required: true
