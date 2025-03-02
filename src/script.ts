@@ -204,7 +204,7 @@ document.addEventListener('alpine:init', () => {
       });
 
       this.ws.addEventListener('close', () => {
-        this.wsStatus = 'needs_to_start';
+        this.close();
       });
 
       this.ws.addEventListener('message', async (event) => {
