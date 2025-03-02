@@ -1,24 +1,27 @@
-import "./assets/style.css";
-import Alpine from "alpinejs";
-import byteSize from "byte-size";
-import { v4 as uuidv4 } from "uuid";
+import './assets/style.css';
+import Alpine from 'alpinejs';
+import byteSize from 'byte-size';
+import CRC32 from 'crc-32';
+import { v4 as uuidv4 } from 'uuid';
 
 // @ts-ignore
 window.Alpine = Alpine;
 
 type AlpineData = {
+  toasts: {
+    id: string;
+    severity: 'success' | 'warning' | 'error';
+    message: string;
+  }[];
+  connecting: boolean;
+  creating: boolean;
+
   isWebRTCSupported: boolean;
-  wsStatus: "needs_to_start" | "error" | "connected";
+  wsStatus: 'needs_to_start' | 'error' | 'connected';
   ws: WebSocket | null;
   peer: RTCPeerConnection | null;
   dataChannel: RTCDataChannel | null;
   iceConnectionState: string | null;
-
-  toasts: {
-    id: string;
-    severity: "success" | "warning" | "error";
-    message: string;
-  }[];
 
   roomId: string | null;
   sending: boolean;
@@ -30,11 +33,18 @@ type AlpineData = {
   receivedFileName: string | null;
   receivedFileType: string | null;
   receivedSize: string | null;
-  receivedChunks: ArrayBuffer[];
+  receivedChecksum: number | null;
+  receivedChunks: Map<
+    number,
+    Uint8Array<ArrayBuffer>
+  > | null;
   received: {
+    id: string;
     name: string;
     type: string;
     size: string;
+    checksum: number | null;
+    generatedChecksum: number | null;
     url: string | null;
     progress: {
       current: number;
@@ -45,25 +55,30 @@ type AlpineData = {
 
   init(): void;
   onInput(file: File | null | undefined): void;
-  start(type: "connect" | "create"): void;
+  start(type: 'connect' | 'create'): void;
   close(): void;
   download(name: string, url: string): void;
   send(): void;
-  showToast(severity: "success" | "warning" | "error", message: string): void;
+  showToast(
+    severity: 'success' | 'warning' | 'error',
+    message: string,
+  ): void;
   removeToast(id: string): void;
   getRandomNumber(length: number): number;
 };
 
-document.addEventListener("alpine:init", () => {
-  Alpine.data<AlpineData, []>("app", () => ({
+document.addEventListener('alpine:init', () => {
+  Alpine.data<AlpineData, []>('app', () => ({
+    toasts: [],
+    connecting: false,
+    creating: false,
+
     isWebRTCSupported: true,
-    wsStatus: "needs_to_start",
+    wsStatus: 'needs_to_start',
     ws: null,
     peer: null,
     dataChannel: null,
     iceConnectionState: null,
-
-    toasts: [],
 
     roomId: null,
     sending: false,
@@ -75,7 +90,8 @@ document.addEventListener("alpine:init", () => {
     receivedFileName: null,
     receivedFileType: null,
     receivedSize: null,
-    receivedChunks: [],
+    receivedChecksum: null,
+    receivedChunks: null,
     received: [],
 
     init() {
@@ -91,11 +107,12 @@ document.addEventListener("alpine:init", () => {
     },
 
     async start(type) {
-      if (type === "connect") {
+      if (type === 'connect') {
         if (!this.roomId) {
-          this.showToast("error", "Room ID is required");
+          this.showToast('error', 'Room ID is required');
           return;
         }
+        this.connecting = true;
 
         // Validate room
         const roomStatus = (await (
@@ -106,15 +123,16 @@ document.addEventListener("alpine:init", () => {
         };
 
         if (!roomStatus.valid) {
-          this.showToast("error", "Invalid room ID");
+          this.showToast('error', 'Invalid room ID');
           return;
         }
 
         if (roomStatus.full) {
-          this.showToast("error", "Room is full");
+          this.showToast('error', 'Room is full');
           return;
         }
-      } else if (type === "create") {
+      } else if (type === 'create') {
+        this.creating = true;
         this.roomId = `${this.getRandomNumber(6)}`;
 
         // Make sure room doesn't exist
@@ -126,27 +144,40 @@ document.addEventListener("alpine:init", () => {
         };
 
         if (roomStatus.valid) {
-          this.start("create"); // Try again
+          this.start('create'); // Try again
           return;
         }
       }
 
       const userId = uuidv4();
-      this.ws = new WebSocket("/socket", [this.roomId!, userId]);
+      this.ws = new WebSocket('/socket', [
+        this.roomId!,
+        userId,
+      ]);
       this.peer = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+        ],
       });
 
       // WS
 
-      this.ws.addEventListener("open", async () => {
-        // console.log("ws: open");
-        this.dataChannel = this.peer!.createDataChannel("fileTransfer", {
-          ordered: true,
-        });
-        this.dataChannel.bufferedAmountLowThreshold = 32 * 1024; // 32 kB
+      this.ws.addEventListener('open', async () => {
+        this.connecting = false;
+        this.creating = false;
+
+        this.dataChannel = this.peer!.createDataChannel(
+          'fileTransfer',
+          {
+            ordered: true,
+          },
+        );
+        this.dataChannel.binaryType = 'arraybuffer';
+        this.dataChannel.bufferedAmountLowThreshold =
+          32 * 1024; // 32 kB
+
         this.dataChannel.onmessage = (e) => {
-          processData(e.data);
+          dataChannelOnMessage(e.data);
         };
 
         const offer = await this.peer!.createOffer();
@@ -155,22 +186,35 @@ document.addEventListener("alpine:init", () => {
           JSON.stringify({
             userId,
             data: {
-              type: "offer",
+              type: 'offer',
               offer: this.peer!.localDescription,
             },
-          })
+          }),
         );
-        this.wsStatus = "connected";
+        this.wsStatus = 'connected';
       });
 
-      this.ws.addEventListener("message", async (event) => {
+      this.ws.addEventListener('error', (err) => {
+        console.log('ws: error', err);
+        this.connecting = false;
+        this.creating = false;
+        this.wsStatus = 'error';
+
+        this.showToast('error', 'Connection error');
+      });
+
+      this.ws.addEventListener('close', () => {
+        this.wsStatus = 'needs_to_start';
+      });
+
+      this.ws.addEventListener('message', async (event) => {
         // console.log("websocket:", eventData);
         const eventData = JSON.parse(event.data);
         if (eventData.userId === userId) return;
 
-        if (eventData.data.type === "offer") {
+        if (eventData.data.type === 'offer') {
           await this.peer!.setRemoteDescription(
-            new RTCSessionDescription(eventData.data.offer)
+            new RTCSessionDescription(eventData.data.offer),
           );
           const answer = await this.peer!.createAnswer();
           await this.peer!.setLocalDescription(answer);
@@ -178,40 +222,31 @@ document.addEventListener("alpine:init", () => {
             JSON.stringify({
               userId,
               data: {
-                type: "answer",
+                type: 'answer',
                 answer: this.peer!.localDescription,
               },
-            })
+            }),
           );
-        } else if (eventData.data.type === "answer") {
+        } else if (eventData.data.type === 'answer') {
           await this.peer!.setRemoteDescription(
-            new RTCSessionDescription(eventData.data.answer)
+            new RTCSessionDescription(
+              eventData.data.answer,
+            ),
           );
-        } else if (eventData.data.type === "candidate") {
+        } else if (eventData.data.type === 'candidate') {
           if (!eventData.data.candidate) return;
 
           await this.peer!.addIceCandidate(
-            new RTCIceCandidate(eventData.data.candidate)
+            new RTCIceCandidate(eventData.data.candidate),
           );
         }
-      });
-
-      this.ws.addEventListener("error", (err) => {
-        console.log("ws: error", err);
-        this.wsStatus = "error";
-
-        this.showToast("error", "Connection error");
-      });
-
-      this.ws.addEventListener("close", () => {
-        // console.log("ws: close");
-        this.wsStatus = "needs_to_start";
       });
 
       // Peer
 
       this.peer.oniceconnectionstatechange = () => {
-        this.iceConnectionState = this.peer!.iceConnectionState;
+        this.iceConnectionState =
+          this.peer!.iceConnectionState;
       };
 
       this.peer.onicecandidate = (event) => {
@@ -220,33 +255,48 @@ document.addEventListener("alpine:init", () => {
           JSON.stringify({
             userId,
             data: {
-              type: "candidate",
+              type: 'candidate',
               candidate: event.candidate || null,
             },
-          })
+          }),
         );
       };
 
       this.peer.ondatachannel = (event) => {
         this.dataChannel = event.channel;
-        this.dataChannel.bufferedAmountLowThreshold = 32 * 1024; // 32 kB
+        this.dataChannel.binaryType = 'arraybuffer';
+        this.dataChannel.bufferedAmountLowThreshold =
+          32 * 1024; // 32 kB
+
         this.dataChannel.onmessage = (e) => {
-          processData(e.data);
+          dataChannelOnMessage(e.data);
         };
       };
 
-      const processData = (data: any) => {
-        if (data === "DONE") {
-          const url = URL.createObjectURL(
-            new Blob(this.receivedChunks, {
-              type: this.receivedFileType!,
-            })
-          );
+      const dataChannelOnMessage = async (data: any) => {
+        if (data === 'DONE') {
+          // Reassemble chunks
+          const chunks = Array.from(
+            this.receivedChunks!.entries(),
+          )
+            .sort(([a], [b]) => a - b)
+            .map(([, data]) => data);
+
+          const blob = new Blob(chunks, {
+            type: this.receivedFileType!,
+          });
+          const url = URL.createObjectURL(blob);
+
           this.received.pop();
           this.received.push({
+            id: uuidv4(),
             name: this.receivedFileName!,
             type: this.receivedFileType!,
             size: this.receivedSize!,
+            checksum: this.receivedChecksum!,
+            generatedChecksum: CRC32.buf(
+              new Uint8Array(await blob.arrayBuffer()),
+            ),
             url,
             progress: null,
           });
@@ -254,18 +304,23 @@ document.addEventListener("alpine:init", () => {
           this.receivedFileName = null;
           this.receivedFileType = null;
           this.receivedSize = null;
-          this.receivedChunks = [];
+          this.receivedChecksum = null;
+          this.receivedChunks = null;
         } else if (!this.receivedFileName) {
-          this.receivedFileName = data || "unknown";
+          this.receivedFileName = data || 'unknown';
         } else if (!this.receivedFileType) {
           this.receivedFileType = data;
         } else if (!this.receivedSize) {
           this.receivedSize = `${byteSize(Number.parseInt(data))}`;
 
+          // For progress
           this.received.push({
+            id: uuidv4(),
             name: this.receivedFileName,
             type: this.receivedFileType,
             size: this.receivedSize!,
+            checksum: null,
+            generatedChecksum: null,
             url: null,
             progress: {
               current: 0,
@@ -273,23 +328,35 @@ document.addEventListener("alpine:init", () => {
               percent: 0,
             },
           });
+        } else if (!this.receivedChecksum) {
+          this.receivedChecksum = Number.parseInt(data);
         } else {
-          const currentProgress =
-            this.received[this.received.length - 1].progress!;
+          // Store chunk
+          const buffer = data as ArrayBuffer;
+          const view = new DataView(buffer);
+          const sequenceNumber = view.getUint32(0);
+          const chunkData = new Uint8Array(buffer, 4);
 
-          let current = 0;
-          if (data instanceof ArrayBuffer) {
-            current = data.byteLength;
-          } else if (data instanceof Blob) {
-            current = data.size;
+          if (!this.receivedChunks) {
+            this.receivedChunks = new Map();
           }
 
-          currentProgress.current += current;
-          currentProgress.percent = Math.round(
-            (currentProgress.current / currentProgress.total) * 100
+          this.receivedChunks.set(
+            sequenceNumber,
+            chunkData,
           );
 
-          this.receivedChunks.push(data);
+          // Update progress
+          const currentProgress =
+            this.received[this.received.length - 1]
+              .progress!;
+
+          currentProgress.current += buffer.byteLength;
+          currentProgress.percent = Math.round(
+            (currentProgress.current /
+              currentProgress.total) *
+              100,
+          );
         }
       };
     },
@@ -301,93 +368,126 @@ document.addEventListener("alpine:init", () => {
       this.receivedFileName = null;
       this.receivedFileType = null;
       this.receivedSize = null;
-      this.receivedChunks = [];
+      this.receivedChecksum = null;
+      this.receivedChunks = null;
       this.received = [];
 
       this.ws?.close();
       this.dataChannel?.close();
       this.peer?.close();
 
-      this.wsStatus = "needs_to_start";
+      this.wsStatus = 'needs_to_start';
       this.ws = null;
       this.peer = null;
       this.dataChannel = null;
     },
 
     download(name: string, url: string) {
-      const link = document.createElement("a");
+      const link = document.createElement('a');
       link.href = url;
       link.download = name;
       link.click();
     },
 
-    send() {
+    async send() {
       // console.log(this.dataChannel?.readyState);
 
       if (!this.form.file) {
-        this.showToast("error", "No file selected");
+        this.showToast('error', 'No file selected');
         return;
       }
 
-      if (this.dataChannel?.readyState !== "open") {
-        this.showToast("error", "Peer not connected");
+      if (this.dataChannel?.readyState !== 'open') {
+        this.showToast('error', 'Peer not connected');
         return;
       }
 
       this.sending = true;
-      // console.log("Sending file:", this.form.file.name);
 
       // Send metadata
       this.dataChannel.send(this.form.file.name);
       this.dataChannel.send(
         this.form.file.type.length === 0
-          ? "application/octet-stream"
-          : this.form.file.type
+          ? 'application/octet-stream'
+          : this.form.file.type,
       );
-      // @ts-ignore
-      this.dataChannel.send(this.form.file.size);
+      this.dataChannel.send(this.form.file.size.toString());
+
+      // Checksum
+      const checksum = CRC32.buf(
+        new Uint8Array(await this.form.file.arrayBuffer()),
+      );
+      this.dataChannel.send(checksum.toString());
 
       // Send file
       const fileSize = this.form.file.size;
       const chunkSize = 16 * 1024; // 16 kB chunks
+      let sequenceNumber = 0;
       let offset = 0;
+      let done = false;
 
-      const readSlice = (offset: number) => {
-        const slice = this.form.file?.slice(offset, offset + chunkSize);
-        const reader = new FileReader();
+      const fileReader = new FileReader();
 
-        reader.onload = (e) => {
-          if (!e.target) return;
+      const readNextChunk = () => {
+        if (offset >= fileSize) {
+          if (done) return;
+          this.dataChannel!.send('DONE');
+          this.form.file = null;
+          this.sending = false;
+          this.sendingProgress = null;
+          done = true;
+          return;
+        }
 
-          // Pause if buffer exceeds the threshold
-          const bufferThreshold = 512 * 1024; // 512 kB
-          if (this.dataChannel!.bufferedAmount > bufferThreshold) {
-            // Resume when buffer is below the threshold
-            this.dataChannel!.onbufferedamountlow = () => {
-              readSlice(offset);
-            };
-          } else {
-            this.dataChannel!.send(e.target.result as any);
-            offset += (e.target.result as ArrayBuffer).byteLength;
-            this.sendingProgress = `${Math.round((offset / fileSize) * 100)}%`;
-
-            if (offset < fileSize) {
-              readSlice(offset); // Recursively send next chunk
-            } else {
-              this.form.file = null;
-              this.dataChannel!.send("DONE");
-              this.sending = false;
-              // console.log("File sent!");
-            }
-          }
-        };
+        const slice = this.form.file?.slice(
+          offset,
+          offset + chunkSize,
+        );
 
         if (slice) {
-          reader.readAsArrayBuffer(slice);
+          fileReader.readAsArrayBuffer(slice);
         }
       };
 
-      readSlice(offset);
+      fileReader.onload = (e) => {
+        if (!e.target) return;
+
+        // Pause if buffer exceeds the threshold
+        const bufferThreshold = 64 * 1024; // 64 kB
+        if (
+          this.dataChannel!.bufferedAmount > bufferThreshold
+        ) {
+          return;
+        }
+
+        const data = e.target.result as ArrayBuffer;
+        const chunkBuffer = new ArrayBuffer(
+          4 + data.byteLength,
+        );
+        const chunkView = new DataView(chunkBuffer);
+
+        // Set sequence number
+        chunkView.setUint32(0, sequenceNumber++);
+        // Set chunk data
+        new Uint8Array(chunkBuffer).set(
+          new Uint8Array(data),
+          4,
+        );
+
+        this.dataChannel!.send(chunkBuffer);
+
+        offset += data.byteLength;
+        this.sendingProgress = `${Math.round((offset / fileSize) * 100)}%`;
+
+        readNextChunk();
+      };
+
+      // Backpressure handling, resume when buffer is low
+      this.dataChannel.onbufferedamountlow = () => {
+        readNextChunk();
+      };
+
+      readNextChunk();
     },
 
     showToast(severity, message) {
@@ -404,12 +504,16 @@ document.addEventListener("alpine:init", () => {
     },
 
     removeToast(id: string) {
-      this.toasts = this.toasts.filter((toast) => toast.id !== id);
+      this.toasts = this.toasts.filter(
+        (toast) => toast.id !== id,
+      );
     },
 
     getRandomNumber(length) {
       if (length <= 0) {
-        throw new Error("Length must be a positive integer.");
+        throw new Error(
+          'Length must be a positive integer.',
+        );
       }
 
       const min = 10 ** (length - 1);

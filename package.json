@@ -9,12 +9,14 @@
     "tailwind-dev": "tailwindcss -i ./src/assets/tailwind.css -o ./src/assets/style.css --minify --watch"
   },
   "dependencies": {
+    "@biomejs/biome": "1.9.4",
     "@tailwindcss/cli": "4.0.9",
     "@types/alpinejs": "3.13.11",
     "@types/bun": "1.2.3",
     "@types/byte-size": "8.1.2",
     "alpinejs": "3.14.8",
     "byte-size": "9.0.1",
+    "crc-32": "1.2.2",
     "tailwindcss": "4.0.9",
     "typescript": "5.7.3",
     "uuid": "11.1.0"
