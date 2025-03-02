@@ -1,273 +1,201 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>QuickShare - P2P file sharing</title>
-    <link rel="icon" href="./assets/favicon.ico" sizes="any" />
-    <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png" />
-  </head>
-  <body>
-    <div
-      x-data="app"
-      class="bg-slate-900 h-screen w-screen flex flex-col items-center justify-center text-white"
-    >
-      <!-- Toast -->
-      <div class="absolute top-5 right-6 flex flex-col items-end gap-2">
-        <template x-for="toast in toasts" :key="toast.id">
-          <div
-            class="w-max flex gap-2 items-center border border-gray-600 rounded-md p-2 text-sm"
-            :class="{
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="QuickShare - Simple and secure P2P file sharing">
+  <title>QuickShare - P2P file sharing</title>
+  <link rel="icon" href="./assets/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png" />
+</head>
+
+<body>
+  <div x-data="app" class="bg-slate-900 h-screen w-screen flex flex-col items-center justify-center text-white">
+    <!-- Toast -->
+    <div class="absolute top-5 right-6 flex flex-col items-end gap-2">
+      <template x-for="toast in toasts" :key="toast.id">
+        <div class="w-max flex gap-2 items-center border border-gray-600 rounded-md p-2 text-sm" :class="{
             'bg-green-600': toast.severity === 'success',
             'bg-yellow-600': toast.severity === 'warning',
             'bg-red-600': toast.severity === 'error',
-          }"
-          >
-            <p x-text="toast.message"></p>
-            <button type="button">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="size-4 cursor-pointer"
-                @click="removeToast(toast.id)"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M6 18 18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-        </template>
-      </div>
-
-      <!-- Title -->
-      <div class="mb-7">
-        <h1 class="text-3xl font-bold">QuickShare</h1>
-        <p class="text-gray-400">Simple and secure file sharing</p>
-      </div>
-
-      <!-- Main container -->
-      <div
-        class="flex flex-col items-center border border-gray-600 rounded-md p-5"
-      >
-        <!-- isWebRTCSupported -->
-        <template x-if="!isWebRTCSupported">
-          <p class="text-sm">Your browser does not support WebRTC</p>
-        </template>
-
-        <!-- ws: needs_to_start  -->
-        <template x-if="isWebRTCSupported && wsStatus === 'needs_to_start'">
-          <div class="flex flex-col gap-2 items-center">
-            <form
-              class="flex flex-col gap-3 items-center"
-              @submit.prevent="start('connect')"
-            >
-              <input
-                type="text"
-                inputmode="numeric"
-                placeholder="Room ID"
-                class="w-[12rem] border border-gray-600 rounded-md px-3 py-2 text-center"
-                x-model="roomId"
-              />
-              <button
-                class="w-[6rem] bg-slate-800 border border-gray-600 py-1 rounded-md text-sm cursor-pointer"
-              >
-                Connect
-              </button>
-            </form>
-
-            <p class="text-xs">Or</p>
-            <button
-              type="button"
-              class="w-[6rem] bg-slate-800 border border-gray-600 py-1 rounded-md text-sm cursor-pointer"
-              @click="start('create')"
-            >
-              Create
-            </button>
-          </div>
-        </template>
-
-        <!-- ws: error -->
-        <template x-if="isWebRTCSupported && wsStatus === 'error'">
-          <div class="flex flex-col gap-3">
-            <h1 class="text-md text-center font-medium">Connection error</h1>
-            <button
-              type="button"
-              class="text-sm text-red-600 cursor-pointer"
-              @click="()=> {
-              window.location.reload();
-            }"
-            >
-              Restart
-            </button>
-          </div>
-        </template>
-
-        <!-- ws: connected -->
-        <template x-if="isWebRTCSupported && wsStatus === 'connected'">
-          <div
-            class="flex flex-col gap-5 w-[calc(100vw-3rem)] md:max-w-[45rem]"
-          >
-            <div class="text-sm">
-              <!-- Room ID -->
-              <div class="flex gap-2 items-center justify-between">
-                <p>
-                  Room ID:
-                  <span
-                    x-text="roomId"
-                    class="font-medium bg-slate-700 px-1 rounded-md"
-                  ></span>
-                </p>
-                <button type="button" class="text-red-600">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke-width="1.5"
-                    stroke="currentColor"
-                    class="size-5 cursor-pointer"
-                    @click="close"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M6 18 18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              </div>
-
-              <!-- Peer status -->
-              <div>
-                <p>
-                  Peer status:
-                  <span
-                    x-text="iceConnectionState || 'disconnected'"
-                    class="bg-slate-700 px-1 rounded-md"
-                  ></span>
-                </p>
-              </div>
-            </div>
-
-            <!-- Form -->
-            <form class="flex gap-3 items-center" @submit.prevent="send">
-              <!-- File picker -->
-              <label for="fileInput" class="w-full cursor-pointer">
-                <!-- Placeholder -->
-                <div
-                  class="mt-1 flex flex-col items-center border-1 border-dashed border-gray-600 py-3"
-                >
-                  <template x-if="!form.file">
-                    <div
-                      class="flex flex-col items-center justify-center gap-1 text-gray-400"
-                    >
-                      <p class="text-sm">Choose a file</p>
-                    </div>
-                  </template>
-                  <template x-if="form.file">
-                    <div
-                      class="flex flex-col items-center justify-center gap-1 text-sm text-gray-300"
-                    >
-                      <p>
-                        File:
-                        <span x-text="form.file.name"></span>
-                      </p>
-                      <p>
-                        Size:
-                        <span x-text="form.fileSize || '-'"></span>
-                      </p>
-                    </div>
-                  </template>
-                </div>
-
-                <!-- Input -->
-                <input
-                  id="fileInput"
-                  type="file"
-                  class="hidden"
-                  @change="onInput($event.target.files[0])"
-                />
-              </label>
-
-              <!-- Submit -->
-              <button
-                :disabled="sending"
-                type="submit"
-                class="w-[6rem] h-[2rem] bg-slate-800 border border-gray-600 py-1 rounded-md text-sm"
-                :class="sending ? 'cursor-not-allowed' : 'cursor-pointer'"
-                x-text="sending ? sendingProgress : 'Send'"
-              ></button>
-            </form>
-
-            <!-- Received -->
-            <div class="flex flex-col overflow-auto">
-              <table class="text-sm">
-                <thead>
-                  <tr>
-                    <th class="text-left border border-gray-600 p-2">Name</th>
-                    <th class="text-left border border-gray-600 p-2">Size</th>
-                    <th class="text-left border border-gray-600 p-2">#</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template x-if="!received.length">
-                    <tr>
-                      <td
-                        colspan="3"
-                        class="text-center border border-gray-600 p-2"
-                      >
-                        No files received
-                      </td>
-                    </tr>
-                  </template>
-                  <template x-for="data in received" :key="data.name">
-                    <tr>
-                      <td
-                        x-text="data.name"
-                        class="text-left border border-gray-600 p-2"
-                      ></td>
-                      <td
-                        x-text="data.size"
-                        class="text-left whitespace-nowrap border border-gray-600 p-2"
-                      ></td>
-                      <td class="text-left border border-gray-600 p-2">
-                        <p
-                          x-show="!data.url"
-                          x-text="data.progress?.percent + '%'"
-                        ></p>
-                        <a
-                          x-show="data.url"
-                          class="underline underline-offset-2 text-sky-400 cursor-pointer"
-                          target="_blank"
-                          :download="data.name"
-                          :href="data.url"
-                        >
-                          download
-                        </a>
-                      </td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
-            </div>
-
-            <p class="text-xs text-gray-400">
-              *All files you send are encrypted and done p2p. Not even us can
-              read or store your files.
-            </p>
-          </div>
-        </template>
-      </div>
-      <!-- End of main container -->
-
-      <p class="text-xs text-gray-400 mt-5">Created with ❤️ by Fidra</p>
+          }">
+          <p x-text="toast.message"></p>
+          <button type="button">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+              stroke="currentColor" class="size-4 cursor-pointer" @click="removeToast(toast.id)">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </template>
     </div>
 
-    <script type="module" src="./script.ts"></script>
-  </body>
+    <!-- Title -->
+    <div class="mb-7">
+      <h1 class="text-3xl font-bold">QuickShare</h1>
+      <p class="text-gray-400">Simple and secure file sharing</p>
+    </div>
+
+    <!-- Main container -->
+    <div class="flex flex-col items-center border border-gray-600 rounded-md p-5">
+      <!-- isWebRTCSupported -->
+      <template x-if="!isWebRTCSupported">
+        <p class="text-sm">Your browser does not support WebRTC</p>
+      </template>
+
+      <!-- ws: needs_to_start  -->
+      <template x-if="isWebRTCSupported && wsStatus === 'needs_to_start'">
+        <div class="flex flex-col gap-2 items-center">
+          <form class="flex flex-col gap-3 items-center" @submit.prevent="start('connect')">
+            <input :readonly="connecting || creating" type="text" inputmode="numeric" placeholder="Room ID"
+              class="w-[12rem] border border-gray-600 rounded-md px-3 py-2 text-center" x-model="roomId" />
+            <button :disabled="connecting || creating" type="submit"
+              class="w-[6rem] bg-slate-800 border border-gray-600 py-1 rounded-md text-sm"
+              :class="connecting || creating ? 'cursor-not-allowed' : 'cursor-pointer'"
+              x-text="connecting ? 'Connecting...' : 'Connect'">
+            </button>
+          </form>
+
+          <p class="text-xs">Or</p>
+          <button :disabled="connecting || creating" type="button"
+            class="w-[6rem] bg-slate-800 border border-gray-600 py-1 rounded-md text-sm"
+            :class="connecting || creating ? 'cursor-not-allowed' : 'cursor-pointer'"
+            x-text="creating ? 'Creating...' : 'Create'" @click="start('create')">
+          </button>
+        </div>
+      </template>
+
+      <!-- ws: error -->
+      <template x-if="isWebRTCSupported && wsStatus === 'error'">
+        <div class="flex flex-col gap-3">
+          <h1 class="text-md text-center font-medium">Connection error</h1>
+          <button type="button" class="text-sm text-red-600 cursor-pointer" @click="()=> {
+              window.location.reload();
+            }">
+            Restart
+          </button>
+        </div>
+      </template>
+
+      <!-- ws: connected -->
+      <template x-if="isWebRTCSupported && wsStatus === 'connected'">
+        <div class="flex flex-col gap-5 w-[calc(100vw-3rem)] md:max-w-[45rem]">
+          <div class="text-sm">
+            <!-- Room ID -->
+            <div class="flex gap-2 items-center justify-between">
+              <p>
+                Room ID:
+                <span x-text="roomId" class="font-medium bg-slate-700 px-1 rounded-md"></span>
+              </p>
+              <button type="button" class="text-red-600">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                  stroke="currentColor" class="size-5 cursor-pointer" @click="close">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Peer status -->
+            <div>
+              <p>
+                Peer status:
+                <span x-text="iceConnectionState || 'disconnected'" class="bg-slate-700 px-1 rounded-md"></span>
+              </p>
+            </div>
+          </div>
+
+          <!-- Form -->
+          <form class="flex gap-3 items-center" @submit.prevent="send">
+            <!-- File picker -->
+            <label for="fileInput" class="w-full cursor-pointer">
+              <!-- Placeholder -->
+              <div class="mt-1 flex flex-col items-center border-1 border-dashed border-gray-600 py-3">
+                <template x-if="!form.file">
+                  <div class="flex flex-col items-center justify-center gap-1 text-gray-400">
+                    <p class="text-sm">Choose a file</p>
+                  </div>
+                </template>
+                <template x-if="form.file">
+                  <div class="flex flex-col items-center justify-center gap-1 text-sm text-gray-300">
+                    <p>
+                      File:
+                      <span x-text="form.file.name"></span>
+                    </p>
+                    <p>
+                      Size:
+                      <span x-text="form.fileSize || '-'"></span>
+                    </p>
+                  </div>
+                </template>
+              </div>
+
+              <!-- Input -->
+              <input id="fileInput" type="file" class="hidden" @change="onInput($event.target.files[0])" />
+            </label>
+
+            <!-- Submit -->
+            <button :disabled="sending" type="submit"
+              class="w-[6rem] h-[2rem] bg-slate-800 border border-gray-600 py-1 rounded-md text-sm"
+              :class="sending ? 'cursor-not-allowed' : 'cursor-pointer'"
+              x-text="sending ? sendingProgress : 'Send'"></button>
+          </form>
+
+          <!-- Received -->
+          <div class="flex flex-col overflow-auto">
+            <table class="text-sm">
+              <thead>
+                <tr>
+                  <th class="text-left border border-gray-600 p-2">Name</th>
+                  <th class="text-left border border-gray-600 p-2">Size</th>
+                  <th class="text-left border border-gray-600 p-2">Link</th>
+                  <th class="text-left border border-gray-600 p-2">Checksum (CRC32)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-if="!received.length">
+                  <tr>
+                    <td colspan="4" class="text-center border border-gray-600 p-2">
+                      No files received
+                    </td>
+                  </tr>
+                </template>
+                <template x-for="data in received" :key="data.id">
+                  <tr>
+                    <td x-text="data.name" class="text-left border border-gray-600 p-2"></td>
+                    <td x-text="data.size" class="text-left whitespace-nowrap border border-gray-600 p-2"></td>
+                    <td class="text-left border border-gray-600 p-2">
+                      <p x-show="!data.url" x-text="data.progress?.percent + '%'"></p>
+                      <a x-show="data.url && data.checksum === data.generatedChecksum"
+                        class="underline underline-offset-2 text-sky-400 cursor-pointer" target="_blank"
+                        :download="data.name" :href="data.url">
+                        download
+                      </a>
+                      <p x-show="data.checksum !== data.generatedChecksum" class="text-red-600">
+                        Invalid checksum
+                      </p>
+                    </td>
+                    <td x-text="data.generatedChecksum" class="text-left whitespace-nowrap border border-gray-600 p-2">
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <p class="text-xs text-gray-400">
+            *All files you send are encrypted and done p2p. Not even us can
+            read or store your files.
+          </p>
+        </div>
+      </template>
+    </div>
+    <!-- End of main container -->
+
+    <p class="text-xs text-gray-400 mt-5">Created with ❤️ by Fidra</p>
+  </div>
+
+  <script type="module" src="./script.ts"></script>
+</body>
+
 </html>
