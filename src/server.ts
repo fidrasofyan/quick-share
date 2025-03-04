@@ -1,8 +1,8 @@
-import packageJson from "../package.json";
-import type { BunRequest } from "bun";
-import indexHtml from "./index.html";
+import type { BunRequest } from 'bun';
+import packageJson from '../package.json';
+import indexHtml from './index.html';
 
-declare module "bun" {
+declare module 'bun' {
   interface Env {
     ENV: string;
     HOST: string;
@@ -23,12 +23,12 @@ type WebSocketData = {
 };
 
 const server = Bun.serve<WebSocketData, any>({
-  development: Bun.env.ENV === "development",
-  hostname: Bun.env.HOST || "localhost",
+  development: Bun.env.ENV === 'development',
+  hostname: Bun.env.HOST || 'localhost',
   port: Number.parseInt(Bun.env.PORT) || 3000,
   routes: {
-    "/": indexHtml,
-    "/rooms/:id": (req: BunRequest<"/rooms/:id">) => {
+    '/': indexHtml,
+    '/rooms/:id': (req: BunRequest<'/rooms/:id'>) => {
       const roomId = req.params.id;
       const room = rooms.get(roomId);
 
@@ -38,7 +38,7 @@ const server = Bun.serve<WebSocketData, any>({
             valid: false,
             full: false,
           },
-          { status: 200 }
+          { status: 200 },
         );
       }
 
@@ -47,7 +47,19 @@ const server = Bun.serve<WebSocketData, any>({
           valid: true,
           full: room.users.size >= 2,
         },
-        { status: 200 }
+        { status: 200 },
+      );
+    },
+    '/stats': (_req: BunRequest<'/stats'>) => {
+      return Response.json(
+        {
+          totalRooms: rooms.size,
+          activeUsers: Array.from(rooms.values()).reduce(
+            (acc, room) => acc + room.users.size,
+            0,
+          ),
+        },
+        { status: 200 },
       );
     },
   },
@@ -55,24 +67,39 @@ const server = Bun.serve<WebSocketData, any>({
     const url = new URL(req.url);
 
     // WebSocket
-    if (url.pathname === "/socket") {
-      const headers = req.headers.get("Sec-WebSocket-Protocol")?.split(",");
+    if (url.pathname === '/socket') {
+      const headers = req.headers
+        .get('Sec-WebSocket-Protocol')
+        ?.split(',');
 
       if (!headers || headers.length !== 2) {
-        return new Response("Invalid headers", {
-          status: 400,
-        });
+        return Response.json(
+          {
+            message: 'Invalid headers',
+          },
+          { status: 400 },
+        );
       }
 
       const roomId = headers[0];
       const userId = headers[1];
 
       if (!roomId) {
-        return new Response("Room ID is required", { status: 400 });
+        return Response.json(
+          {
+            message: 'Room ID is required',
+          },
+          { status: 400 },
+        );
       }
 
       if (!userId) {
-        return new Response("User ID is required", { status: 400 });
+        return Response.json(
+          {
+            message: 'User ID is required',
+          },
+          { status: 400 },
+        );
       }
 
       const serverUpgrade = server.upgrade(req, {
@@ -86,11 +113,21 @@ const server = Bun.serve<WebSocketData, any>({
         return new Response(null);
       }
 
-      return new Response("Upgrade failed", { status: 500 });
+      return Response.json(
+        {
+          message: 'Upgrade failed',
+        },
+        { status: 500 },
+      );
     }
 
     // Not found
-    return new Response("Not found", { status: 404 });
+    return Response.json(
+      {
+        message: 'Not found',
+      },
+      { status: 404 },
+    );
   },
   // @ts-ignore
   websocket: {
@@ -98,7 +135,7 @@ const server = Bun.serve<WebSocketData, any>({
       const room = rooms.get(ws.data.roomId);
 
       if (room && room.users.size >= 2) {
-        ws.close(1008, "full");
+        ws.close(1008, 'full');
         return;
       }
 
@@ -114,8 +151,9 @@ const server = Bun.serve<WebSocketData, any>({
     },
     message(ws, message) {
       const room = rooms.get(ws.data.roomId);
+
       if (room && !room.users.has(ws.data.userId)) {
-        ws.close(1008, "Not in room");
+        ws.close(1008, 'Not in room');
         return;
       }
 
@@ -124,7 +162,7 @@ const server = Bun.serve<WebSocketData, any>({
     close(ws) {
       const room = rooms.get(ws.data.roomId);
 
-      if (room && room.users.has(ws.data.userId)) {
+      if (room?.users.has(ws.data.userId)) {
         room.users.delete(ws.data.userId);
 
         if (room.users.size === 0) {
@@ -136,26 +174,26 @@ const server = Bun.serve<WebSocketData, any>({
 });
 
 console.log(
-  `Bun: v${Bun.version} - env: ${Bun.env.ENV} - version: v${packageJson.version}`
+  `Bun: v${Bun.version} - env: ${Bun.env.ENV} - version: v${packageJson.version}`,
 );
 
 console.log(`server running at ${server.url}`);
 
 // Graceful shutdown
-process.on("SIGINT", () => {
+process.on('SIGINT', () => {
   shutdown();
 });
 
-process.on("SIGTERM", () => {
+process.on('SIGTERM', () => {
   shutdown();
 });
 
-process.on("SIGKILL", () => {
+process.on('SIGKILL', () => {
   shutdown();
 });
 
 function shutdown() {
   server.stop();
-  console.log("server stopped");
+  console.log('server stopped');
   process.exit(0);
 }

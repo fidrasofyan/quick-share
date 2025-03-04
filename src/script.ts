@@ -124,11 +124,13 @@ document.addEventListener('alpine:init', () => {
 
         if (!roomStatus.valid) {
           this.showToast('error', 'Invalid room ID');
+          this.connecting = false;
           return;
         }
 
         if (roomStatus.full) {
           this.showToast('error', 'Room is full');
+          this.connecting = false;
           return;
         }
       } else if (type === 'create') {
@@ -390,8 +392,6 @@ document.addEventListener('alpine:init', () => {
     },
 
     async send() {
-      // console.log(this.dataChannel?.readyState);
-
       if (!this.form.file) {
         this.showToast('error', 'No file selected');
         return;
@@ -464,10 +464,13 @@ document.addEventListener('alpine:init', () => {
         const chunkBuffer = new ArrayBuffer(
           4 + data.byteLength,
         );
-        const chunkView = new DataView(chunkBuffer);
 
         // Set sequence number
-        chunkView.setUint32(0, sequenceNumber++);
+        new DataView(chunkBuffer).setUint32(
+          0,
+          sequenceNumber++,
+        );
+
         // Set chunk data
         new Uint8Array(chunkBuffer).set(
           new Uint8Array(data),
