@@ -158,7 +158,9 @@ document.addEventListener('alpine:init', () => {
       ]);
       this.peer = new RTCPeerConnection({
         iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
+          {
+            urls: 'stun:stunserver2024.stunprotocol.org:3478',
+          },
         ],
       });
 
@@ -184,6 +186,7 @@ document.addEventListener('alpine:init', () => {
 
         const offer = await this.peer!.createOffer();
         await this.peer!.setLocalDescription(offer);
+
         this.ws!.send(
           JSON.stringify({
             userId,
@@ -289,7 +292,10 @@ document.addEventListener('alpine:init', () => {
           });
           const url = URL.createObjectURL(blob);
 
+          // Remove progress
           this.received.pop();
+
+          // This is the final file
           this.received.push({
             id: uuidv4(),
             name: this.receivedFileName!,
@@ -348,11 +354,12 @@ document.addEventListener('alpine:init', () => {
             chunkData,
           );
 
-          // Update progress
+          // Get current progress (last element)
           const currentProgress =
             this.received[this.received.length - 1]
               .progress!;
 
+          // Update progress
           currentProgress.current += buffer.byteLength;
           currentProgress.percent = Math.round(
             (currentProgress.current /
@@ -413,13 +420,13 @@ document.addEventListener('alpine:init', () => {
       );
       this.dataChannel.send(this.form.file.size.toString());
 
-      // Checksum
+      // Send checksum
       const checksum = CRC32.buf(
         new Uint8Array(await this.form.file.arrayBuffer()),
       );
       this.dataChannel.send(checksum.toString());
 
-      // Send file
+      // Send file in chunks
       const fileSize = this.form.file.size;
       const chunkSize = 16 * 1024; // 16 kB chunks
       let sequenceNumber = 0;
