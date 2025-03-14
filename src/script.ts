@@ -341,9 +341,10 @@ document.addEventListener('alpine:init', () => {
             type: this.receivedFileType!,
             size: this.receivedSize!,
             checksum: this.receivedChecksum!,
-            generatedChecksum: CRC32.buf(
-              new Uint8Array(await blob.arrayBuffer()),
-            ),
+            generatedChecksum:
+              CRC32.buf(
+                new Uint8Array(await blob.arrayBuffer()),
+              ) >>> 0,
             url,
             progress: null,
           });
@@ -460,9 +461,12 @@ document.addEventListener('alpine:init', () => {
       this.dataChannel.send(this.form.file.size.toString());
 
       // Send checksum
-      const checksum = CRC32.buf(
-        new Uint8Array(await this.form.file.arrayBuffer()),
-      );
+      const checksum =
+        CRC32.buf(
+          new Uint8Array(
+            await this.form.file.arrayBuffer(),
+          ),
+        ) >>> 0;
       this.dataChannel.send(checksum.toString());
 
       // Send file in chunks
