@@ -159,7 +159,7 @@ document.addEventListener('alpine:init', () => {
       this.peer = new RTCPeerConnection({
         iceServers: [
           {
-            urls: 'stun:stunserver2024.stunprotocol.org:3478',
+            urls: 'stun:stun.nextcloud.com:443',
           },
         ],
       });
