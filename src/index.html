@@ -59,9 +59,9 @@
 
           <p class="text-xs">Or</p>
           <button :disabled="connecting || creating" type="button"
-            class="w-[6rem] bg-slate-800 border border-gray-600 py-1 rounded-md text-sm"
+            class="w-[7rem] bg-slate-800 border border-gray-600 py-1 rounded-md text-sm"
             :class="connecting || creating ? 'cursor-not-allowed' : 'cursor-pointer'"
-            x-text="creating ? 'Creating...' : 'Create'" @click="start('create')">
+            x-text="creating ? 'Creating...' : 'Create a room'" @click="start('create')">
           </button>
         </div>
       </template>

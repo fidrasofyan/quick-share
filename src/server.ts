@@ -1,4 +1,5 @@
 import type { BunRequest } from 'bun';
+import { DateTime, Settings } from 'luxon';
 import packageJson from '../package.json';
 import indexHtml from './index.html';
 
@@ -9,6 +10,42 @@ declare module 'bun' {
     PORT: string;
   }
 }
+
+Settings.defaultZone = 'Asia/Jakarta';
+Settings.defaultLocale = 'id-ID';
+
+function getDatetime() {
+  return DateTime.now().toFormat(
+    'yyyy-MM-dd HH:mm:ss ZZZZ',
+  );
+}
+
+function readEnv(name: string) {
+  if (!Bun.env[name]) {
+    console.error(`Env ${name} not found`);
+    process.exit(1);
+  }
+
+  return Bun.env[name];
+}
+
+const config = {
+  ENV: readEnv('ENV'),
+  HOST: readEnv('HOST'),
+  PORT: Number.parseInt(readEnv('PORT')),
+  ICE_SERVERS: readEnv('ICE_SERVERS')
+    .split(',')
+    .map((val) => {
+      const result = val.split('@');
+      const credentials = result[0].split(':');
+
+      return {
+        urls: result[1],
+        username: credentials[0],
+        credential: credentials[1],
+      };
+    }),
+};
 
 const rooms = new Map<
   string,
@@ -23,11 +60,16 @@ type WebSocketData = {
 };
 
 const server = Bun.serve<WebSocketData, any>({
-  development: Bun.env.ENV === 'development',
-  hostname: Bun.env.HOST || 'localhost',
-  port: Number.parseInt(Bun.env.PORT) || 3000,
+  development: config.ENV === 'development',
+  hostname: config.HOST,
+  port: config.PORT,
   routes: {
     '/': indexHtml,
+    '/ice-servers': (_req: BunRequest<'/ice-servers'>) => {
+      return Response.json(config.ICE_SERVERS, {
+        status: 200,
+      });
+    },
     '/rooms/:id': (req: BunRequest<'/rooms/:id'>) => {
       const roomId = req.params.id;
       const room = rooms.get(roomId);
@@ -148,6 +190,10 @@ const server = Bun.serve<WebSocketData, any>({
           users: new Set([ws.data.userId]),
         });
       }
+
+      console.log(
+        `${getDatetime()} # WS: ${ws.data.userId} connected to room ${ws.data.roomId}`,
+      );
     },
     message(ws, message) {
       const room = rooms.get(ws.data.roomId);
@@ -169,15 +215,21 @@ const server = Bun.serve<WebSocketData, any>({
           rooms.delete(ws.data.roomId);
         }
       }
+
+      console.log(
+        `${getDatetime()} # WS: ${ws.data.userId} disconnected from room ${ws.data.roomId}`,
+      );
     },
   },
 });
 
 console.log(
-  `Bun: v${Bun.version} - env: ${Bun.env.ENV} - version: v${packageJson.version}`,
+  `${getDatetime()} # Bun: v${Bun.version} - env: ${config.ENV} - version: v${packageJson.version}`,
 );
 
-console.log(`server running at ${server.url}`);
+console.log(
+  `${getDatetime()} # server running at ${server.url}`,
+);
 
 // Graceful shutdown
 process.on('SIGINT', () => {
@@ -194,6 +246,6 @@ process.on('SIGKILL', () => {
 
 function shutdown() {
   server.stop();
-  console.log('server stopped');
+  console.log(`${getDatetime()} # server stopped`);
   process.exit(0);
 }

@@ -115,22 +115,28 @@ document.addEventListener('alpine:init', () => {
         this.connecting = true;
 
         // Validate room
-        const roomStatus = (await (
-          await fetch(`/rooms/${this.roomId}`)
-        ).json()) as {
-          valid: boolean;
-          full: boolean;
-        };
+        try {
+          const roomStatus = (await (
+            await fetch(`/rooms/${this.roomId}`)
+          ).json()) as {
+            valid: boolean;
+            full: boolean;
+          };
 
-        if (!roomStatus.valid) {
-          this.showToast('error', 'Invalid room ID');
-          this.connecting = false;
-          return;
-        }
+          if (!roomStatus.valid) {
+            this.showToast('error', 'Invalid room ID');
+            this.connecting = false;
+            return;
+          }
 
-        if (roomStatus.full) {
-          this.showToast('error', 'Room is full');
+          if (roomStatus.full) {
+            this.showToast('error', 'Room is full');
+            this.connecting = false;
+            return;
+          }
+        } catch (_error) {
           this.connecting = false;
+          this.showToast('error', 'Failed to connect');
           return;
         }
       } else if (type === 'create') {
@@ -138,37 +144,63 @@ document.addEventListener('alpine:init', () => {
         this.roomId = `${this.getRandomNumber(6)}`;
 
         // Make sure room doesn't exist
-        const roomStatus = (await (
-          await fetch(`/rooms/${this.roomId}`)
-        ).json()) as {
-          valid: boolean;
-          full: boolean;
-        };
+        try {
+          const roomStatus = (await (
+            await fetch(`/rooms/${this.roomId}`)
+          ).json()) as {
+            valid: boolean;
+            full: boolean;
+          };
 
-        if (roomStatus.valid) {
-          this.start('create'); // Try again
+          if (roomStatus.valid) {
+            this.start('create'); // Try again
+            return;
+          }
+        } catch (_error) {
+          this.creating = false;
+          this.showToast(
+            'error',
+            'Failed to create a room',
+          );
           return;
         }
       }
 
+      // Get ice servers
+      let iceServers = [];
+      try {
+        const result = await fetch('/ice-servers');
+        iceServers = await result.json();
+      } catch (_error) {
+        this.connecting = false;
+        this.creating = false;
+        this.showToast(
+          'error',
+          'Failed to get credentials',
+        );
+        return;
+      }
+
+      if (iceServers.length === 0) {
+        this.connecting = false;
+        this.creating = false;
+        this.showToast(
+          'error',
+          'Failed to get credentials',
+        );
+        return;
+      }
+
+      // Connect to ws for signaling
       const userId = uuidv4();
       this.ws = new WebSocket('/socket', [
         this.roomId!,
         userId,
       ]);
+
+      // Create rtc connection
       this.peer = new RTCPeerConnection({
-        iceServers: [
-          {
-            urls: 'stun:157.20.50.213:3478',
-            username: 'sabily',
-            credential: 'sabily',
-          },
-          {
-            urls: 'turn:157.20.50.213:3478',
-            username: 'sabily',
-            credential: 'sabily',
-          },
-        ],
+        iceServers,
       });
 
       // WS
