@@ -59,6 +59,7 @@ type AlpineData = {
   close(): void;
   download(name: string, url: string): void;
   send(): void;
+  copyToClipboard(text: string): void;
   showToast(
     severity: 'success' | 'warning' | 'error',
     message: string,
@@ -98,6 +99,15 @@ document.addEventListener('alpine:init', () => {
       this.isWebRTCSupported = !!(
         window.RTCPeerConnection && window.RTCDataChannel
       );
+
+      // If query param is set
+      const urlParams = new URLSearchParams(
+        window.location.search,
+      );
+      if (urlParams.has('rid')) {
+        this.roomId = urlParams.get('rid');
+        this.start('connect');
+      }
     },
 
     onInput(file) {
@@ -206,6 +216,18 @@ document.addEventListener('alpine:init', () => {
       // WS
 
       this.ws.addEventListener('open', async () => {
+        // Modify query param
+        const params = new URLSearchParams(
+          window.location.search,
+        );
+        params.set('rid', this.roomId!);
+
+        window.history.replaceState(
+          null,
+          '',
+          `${window.location.pathname}?${params.toString()}`,
+        );
+
         this.connecting = false;
         this.creating = false;
 
@@ -411,6 +433,18 @@ document.addEventListener('alpine:init', () => {
     },
 
     close() {
+      // Modify query param
+      const params = new URLSearchParams(
+        window.location.search,
+      );
+      params.delete('rid');
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?${params.toString()}`,
+      );
+
+      // Reset data
       this.roomId = null;
       this.sending = false;
       this.form.file = null;
@@ -541,6 +575,11 @@ document.addEventListener('alpine:init', () => {
       };
 
       readNextChunk();
+    },
+
+    copyToClipboard(text: string) {
+      navigator.clipboard.writeText(text);
+      this.showToast('success', 'Copied to clipboard');
     },
 
     showToast(severity, message) {
