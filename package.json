@@ -10,17 +10,17 @@
   },
   "dependencies": {
     "@biomejs/biome": "1.9.4",
-    "@tailwindcss/cli": "4.0.9",
+    "@tailwindcss/cli": "4.0.14",
     "@types/alpinejs": "3.13.11",
-    "@types/bun": "1.2.3",
+    "@types/bun": "1.2.5",
     "@types/byte-size": "8.1.2",
     "@types/luxon": "3.4.2",
-    "alpinejs": "3.14.8",
+    "alpinejs": "3.14.9",
     "byte-size": "9.0.1",
     "crc-32": "1.2.2",
     "luxon": "3.5.0",
-    "tailwindcss": "4.0.9",
-    "typescript": "5.7.3",
+    "tailwindcss": "4.0.14",
+    "typescript": "5.8.2",
     "uuid": "11.1.0"
   }
 }
