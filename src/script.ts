@@ -269,10 +269,6 @@ document.addEventListener('alpine:init', () => {
         this.showToast('error', 'Connection error');
       });
 
-      this.ws.addEventListener('close', () => {
-        this.close();
-      });
-
       this.ws.addEventListener('message', async (event) => {
         // console.log("websocket:", eventData);
         const eventData = JSON.parse(event.data);
