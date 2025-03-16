@@ -126,18 +126,18 @@ document.addEventListener('alpine:init', () => {
 
         // Validate room
         try {
+          if (/^\d{6}$/.test(this.roomId) === false) {
+            this.showToast('error', 'Invalid room ID');
+            this.connecting = false;
+            return;
+          }
+
           const roomStatus = (await (
             await fetch(`/rooms/${this.roomId}`)
           ).json()) as {
             valid: boolean;
             full: boolean;
           };
-
-          if (!roomStatus.valid) {
-            this.showToast('error', 'Invalid room ID');
-            this.connecting = false;
-            return;
-          }
 
           if (roomStatus.full) {
             this.showToast('error', 'Room is full');
